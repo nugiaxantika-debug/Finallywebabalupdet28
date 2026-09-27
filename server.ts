@@ -10,20 +10,41 @@ import { initializeApp } from "firebase/app";
 import { getFirestore, collection, doc, getDoc, setDoc, getDocs, getCountFromServer , deleteDoc} from "firebase/firestore";
 import admin from 'firebase-admin';
 
-const firebaseConfig = JSON.parse(fs.readFileSync(path.join(process.cwd(), 'firebase-applet-config.json'), 'utf8'));
-const adminApp = initializeApp(firebaseConfig);
-const adminDb = getFirestore(adminApp, firebaseConfig.firestoreDatabaseId);
+let firebaseConfig: any = {};
+try {
+  const configPath = path.join(process.cwd(), 'firebase-applet-config.json');
+  if (fs.existsSync(configPath)) {
+    firebaseConfig = JSON.parse(fs.readFileSync(configPath, 'utf8'));
+  }
+} catch (e) {
+  console.warn("Could not load firebase-applet-config.json:", e);
+}
+
+let adminApp: any = null;
+let adminDb: any = null;
+try {
+  if (firebaseConfig && firebaseConfig.apiKey) {
+    adminApp = initializeApp(firebaseConfig);
+    adminDb = getFirestore(adminApp, firebaseConfig.firestoreDatabaseId);
+  }
+} catch (e) {
+  console.warn("Firebase client init warning:", e);
+}
 
 // Initialize Firebase Admin SDK using Environment Variables (Service Account)
 if (process.env.FIREBASE_PROJECT_ID && process.env.FIREBASE_CLIENT_EMAIL && process.env.FIREBASE_PRIVATE_KEY) {
-  admin.initializeApp({
-    credential: admin.credential.cert({
-      projectId: process.env.FIREBASE_PROJECT_ID,
-      clientEmail: process.env.FIREBASE_CLIENT_EMAIL,
-      privateKey: process.env.FIREBASE_PRIVATE_KEY.replace(/\\n/g, '\n')
-    })
-  });
-  console.log("Firebase Admin SDK initialized successfully");
+  try {
+    admin.initializeApp({
+      credential: admin.credential.cert({
+        projectId: process.env.FIREBASE_PROJECT_ID,
+        clientEmail: process.env.FIREBASE_CLIENT_EMAIL,
+        privateKey: process.env.FIREBASE_PRIVATE_KEY.replace(/\\n/g, '\n')
+      })
+    });
+    console.log("Firebase Admin SDK initialized successfully");
+  } catch (e) {
+    console.warn("Firebase Admin SDK initialization error:", e);
+  }
 } else {
   console.warn("Firebase Admin SDK not initialized: Missing service account environment variables");
 }
@@ -42,13 +63,13 @@ async function startServer() {
   const io = new SocketIOServer(server, {
     cors: { origin: "*" },
   });
-  const PORT = 3000;
+  const PORT = Number(process.env.PORT) || 3000;
 
   let publicUrl = "";
 
   app.use((req, res, next) => {
     if (!publicUrl && req.headers.host) {
-      if (req.headers.host.includes("run.app") || req.headers.host.includes("aistudio")) {
+      if (req.headers.host.includes("run.app") || req.headers.host.includes("aistudio") || req.headers.host.includes("railway.app") || req.headers.host.includes("up.railway.app")) {
          publicUrl = `https://${req.headers.host}`;
          console.log(`Discovered public URL for keep-alive: ${publicUrl}`);
       }
@@ -58,7 +79,12 @@ async function startServer() {
 
   app.use(express.json({ limit: '50mb' }));
   app.use(express.urlencoded({ limit: '50mb', extended: true }));
-  app.use('/uploads', express.static(path.join(process.cwd(), 'public', 'uploads')));
+
+  const uploadsDir = path.join(process.cwd(), 'public', 'uploads');
+  if (!fs.existsSync(uploadsDir)) {
+    try { fs.mkdirSync(uploadsDir, { recursive: true }); } catch(e) {}
+  }
+  app.use('/uploads', express.static(uploadsDir));
 
   
 

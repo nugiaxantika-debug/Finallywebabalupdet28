@@ -1,2 +1,8 @@
 [phases.setup]
 nixPkgs = ['nodejs', 'npm', 'fontconfig', 'dejavu_fonts', 'noto-fonts', 'ubuntu_font_family', 'ffmpeg']
+
+[phases.build]
+cmds = ['npm run build']
+
+[start]
+cmd = 'node dist/server.cjs'
