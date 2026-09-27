@@ -897,8 +897,9 @@ private loadKaryawanData() {
       // 6. High quality aesthetic fallback avatar
       const name = msg.pushName || "User";
       const initial = name.charAt(0).toUpperCase();
+      const initialVector = this.getTextSvgPath(initial, { x: 250, y: 200, fontSize: 120, bold: true, color: "#6366f1" });
       const fallbackSvg = `
-        <svg width="500" height="500">
+        <svg width="500" height="500" xmlns="http://www.w3.org/2000/svg">
           <defs>
             <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
               <stop offset="0%" stop-color="#3b82f6"/>
@@ -908,58 +909,56 @@ private loadKaryawanData() {
           </defs>
           <rect width="500" height="500" fill="url(#bg)"/>
           <circle cx="250" cy="200" r="110" fill="#ffffff" fill-opacity="0.9"/>
-          <text x="250" y="240" font-size="120" font-family="sans-serif" font-weight="900" fill="#6366f1" text-anchor="middle">${initial}</text>
+          ${initialVector}
           <path d="M 100 480 Q 250 310 400 480 Z" fill="#ffffff" fill-opacity="0.9"/>
         </svg>
       `;
       return await sharp(Buffer.from(fallbackSvg)).png().toBuffer();
     }
 
-    private getEmbeddedMockupFonts(): string {
-      const fs = require('fs');
-      const path = require('path');
-      
-      let fontRegB64 = '';
-      let fontBoldB64 = '';
+    private getTextSvgPath(text: string, options: {
+      x: number;
+      y: number;
+      fontSize: number;
+      bold?: boolean;
+      color?: string;
+      anchor?: string;
+    }): string {
+      try {
+        const TextToSVG = require("text-to-svg");
+        const path = require("path");
+        const fs = require("fs");
+        
+        let fontFile = options.bold
+          ? path.join(process.cwd(), "public/templates/sans_bold.ttf")
+          : path.join(process.cwd(), "public/templates/sans_font.ttf");
 
-      const regPaths = [
-        path.join(process.cwd(), 'public', 'templates', 'sans_font.ttf'),
-        path.join(process.cwd(), 'node_modules', 'clean-jsdoc-theme', 'static', 'fonts', 'OpenSans-Regular.ttf'),
-        path.join(process.cwd(), 'public', 'templates', 'nulis_font.ttf')
-      ];
-      for (const p of regPaths) {
-        if (fs.existsSync(p)) {
-          try { fontRegB64 = fs.readFileSync(p).toString('base64'); break; } catch(e) {}
-        }
-      }
-
-      const boldPaths = [
-        path.join(process.cwd(), 'public', 'templates', 'sans_bold.ttf'),
-        path.join(process.cwd(), 'node_modules', 'docdash', 'static', 'fonts', 'Montserrat', 'Montserrat-Bold.ttf'),
-        path.join(process.cwd(), 'node_modules', 'clean-jsdoc-theme', 'static', 'fonts', 'WorkSans-Bold.ttf')
-      ];
-      for (const p of boldPaths) {
-        if (fs.existsSync(p)) {
-          try { fontBoldB64 = fs.readFileSync(p).toString('base64'); break; } catch(e) {}
-        }
-      }
-
-      return `
-        <style>
-          ${fontRegB64 ? `@font-face {
-            font-family: "MockupFont";
-            src: url("data:font/ttf;base64,${fontRegB64}");
-          }` : ''}
-          ${fontBoldB64 ? `@font-face {
-            font-family: "MockupFontBold";
-            src: url("data:font/ttf;base64,${fontBoldB64}");
-            font-weight: bold;
-          }` : ''}
-          text {
-            font-family: "MockupFontBold", "MockupFont", "DejaVu Sans", "Liberation Sans", "Ubuntu", sans-serif;
+        if (!fs.existsSync(fontFile)) {
+          const regCandidates = [
+            path.join(process.cwd(), "public/templates/sans_font.ttf"),
+            path.join(process.cwd(), "node_modules/clean-jsdoc-theme/static/fonts/OpenSans-Regular.ttf"),
+            path.join(process.cwd(), "public/templates/nulis_font.ttf")
+          ];
+          for (const cand of regCandidates) {
+            if (fs.existsSync(cand)) { fontFile = cand; break; }
           }
-        </style>
-      `;
+        }
+
+        const t2s = TextToSVG.loadSync(fontFile);
+        return t2s.getPath(text, {
+          x: options.x,
+          y: options.y,
+          fontSize: options.fontSize,
+          anchor: options.anchor || "center middle",
+          attributes: {
+            fill: options.color || "#ffffff"
+          }
+        });
+      } catch (err) {
+        console.error("TextToSVG conversion fallback:", err);
+        const safeText = text.replace(/[<>&'"]/g, '');
+        return `<text x="${options.x}" y="${options.y}" font-size="${options.fontSize}" font-family="sans-serif" font-weight="${options.bold ? 'bold' : 'normal'}" fill="${options.color || '#ffffff'}" text-anchor="middle">${safeText}</text>`;
+      }
     }
 
     private async generateProductMockup(
@@ -969,7 +968,6 @@ private loadKaryawanData() {
       userName: string = "User"
     ): Promise<Buffer> {
       const templatesDir = path.join(process.cwd(), 'public/templates');
-      const fontDefs = this.getEmbeddedMockupFonts();
 
       if (type === 'rokok') {
         const templatePath = path.join(templatesDir, 'template_rokok.jpg');
@@ -979,18 +977,19 @@ private loadKaryawanData() {
 
         const brandText = customText.trim() ? customText.trim().replace(/[<>&'"]/g, '').substring(0, 20) : "SPECIAL EDITION";
 
+        const brandSvgPath = this.getTextSvgPath(brandText, { x: rokokW / 2, y: 50, fontSize: 22, bold: true, color: "#ffffff" });
+        const warnTitlePath = this.getTextSvgPath("PERINGATAN", { x: rokokW / 2, y: rokokH - 52, fontSize: 16, bold: true, color: "#ef4444" });
+        const warnDescPath = this.getTextSvgPath("MEROKOK SEBABKAN KANKER", { x: rokokW / 2, y: rokokH - 24, fontSize: 13, bold: true, color: "#ffffff" });
+
         const rokokOverlay = Buffer.from(`
           <svg width="${rokokW}" height="${rokokH}" xmlns="http://www.w3.org/2000/svg">
-            <defs>
-              ${fontDefs}
-            </defs>
             <line x1="0" y1="10" x2="${rokokW}" y2="10" stroke="#000000" stroke-opacity="0.4" stroke-width="4"/>
             <rect x="20" y="28" width="${rokokW - 40}" height="44" rx="10" fill="#000000" fill-opacity="0.7" />
-            <text x="${rokokW / 2}" y="58" font-size="22" font-family="MockupFontBold, sans-serif" font-weight="bold" fill="#ffffff" letter-spacing="3" text-anchor="middle">${brandText}</text>
+            ${brandSvgPath}
             
             <rect x="0" y="${rokokH - 85}" width="${rokokW}" height="85" fill="#0f172a" fill-opacity="0.95" />
-            <text x="${rokokW / 2}" y="${rokokH - 52}" font-size="16" font-family="MockupFontBold, sans-serif" font-weight="900" fill="#ef4444" text-anchor="middle">PERINGATAN</text>
-            <text x="${rokokW / 2}" y="${rokokH - 24}" font-size="13" font-family="MockupFontBold, sans-serif" font-weight="bold" fill="#ffffff" text-anchor="middle">MEROKOK SEBABKAN KANKER</text>
+            ${warnTitlePath}
+            ${warnDescPath}
           </svg>
         `);
 
@@ -1033,13 +1032,11 @@ private loadKaryawanData() {
         let labelOverlay = null;
         if (customText.trim()) {
           const cleanCustom = customText.trim().replace(/[<>&'"]/g, '').substring(0, 18);
+          const caseLabelPath = this.getTextSvgPath(cleanCustom, { x: caseW / 2, y: caseH - 99, fontSize: 16, bold: true, color: "#ffffff" });
           labelOverlay = Buffer.from(`
             <svg width="${caseW}" height="${caseH}" xmlns="http://www.w3.org/2000/svg">
-              <defs>
-                ${fontDefs}
-              </defs>
               <rect x="${caseW / 2 - 110}" y="${caseH - 120}" width="220" height="42" rx="21" fill="#000000" fill-opacity="0.65" stroke="#ffffff" stroke-width="1.5"/>
-              <text x="${caseW / 2}" y="${caseH - 93}" font-size="16" font-family="MockupFontBold, sans-serif" font-weight="bold" fill="#ffffff" text-anchor="middle">${cleanCustom}</text>
+              ${caseLabelPath}
             </svg>
           `);
         }
@@ -1078,10 +1075,16 @@ private loadKaryawanData() {
           .png()
           .toBuffer();
 
+        const passHeaderPath = this.getTextSvgPath("OFFICIAL VIP PASS", { x: idW / 2, y: 55, fontSize: 13, bold: true, color: "#1e293b" });
+        const namePath = this.getTextSvgPath(cleanName, { x: idW / 2, y: 268, fontSize: 18, bold: true, color: "#ffffff" });
+        const customRolePath = this.getTextSvgPath(cleanCustom, { x: idW / 2, y: 293, fontSize: 11, bold: true, color: "#60a5fa" });
+        const idNumPath = this.getTextSvgPath(`ID NO: BATAK-${randomIdNum}`, { x: idW / 2, y: 326, fontSize: 11, bold: false, color: "#94a3b8" });
+        const authTextPath = this.getTextSvgPath("AUTHORIZED ACCESS ONLY", { x: idW / 2, y: 344, fontSize: 9, bold: false, color: "#64748b" });
+        const validBadgePath = this.getTextSvgPath("VALID", { x: 260, y: 310, fontSize: 8, bold: true, color: "#fbbf24" });
+
         const badgeSvg = Buffer.from(`
           <svg width="${idW}" height="${idH}" xmlns="http://www.w3.org/2000/svg">
             <defs>
-              ${fontDefs}
               <linearGradient id="idBg" x1="0%" y1="0%" x2="100%" y2="100%">
                 <stop offset="0%" stop-color="#1e293b"/>
                 <stop offset="100%" stop-color="#0f172a"/>
@@ -1094,17 +1097,17 @@ private loadKaryawanData() {
             </defs>
             <rect width="${idW}" height="${idH}" rx="20" ry="20" fill="url(#idBg)"/>
             <rect x="0" y="38" width="${idW}" height="34" fill="url(#gold)"/>
-            <text x="${idW / 2}" y="60" font-size="13" font-family="MockupFontBold, sans-serif" font-weight="900" fill="#1e293b" letter-spacing="2" text-anchor="middle">OFFICIAL VIP PASS</text>
+            ${passHeaderPath}
             
             <!-- Frame around avatar -->
             <rect x="${(idW - avatarW) / 2 - 3}" y="82" width="${avatarW + 6}" height="${avatarH + 6}" rx="12" ry="12" fill="none" stroke="url(#gold)" stroke-width="3"/>
             
-            <text x="${idW / 2}" y="268" font-size="18" font-family="MockupFontBold, sans-serif" font-weight="900" fill="#ffffff" text-anchor="middle">${cleanName}</text>
+            ${namePath}
             <rect x="${idW / 2 - 65}" y="282" width="130" height="22" rx="11" fill="#3b82f6" fill-opacity="0.3" stroke="#3b82f6" stroke-width="1.5"/>
-            <text x="${idW / 2}" y="297" font-size="11" font-family="MockupFontBold, sans-serif" font-weight="bold" fill="#60a5fa" letter-spacing="1" text-anchor="middle">${cleanCustom}</text>
+            ${customRolePath}
             
-            <text x="${idW / 2}" y="330" font-size="11" font-family="MockupFont, monospace" fill="#94a3b8" text-anchor="middle">ID NO: BATAK-${randomIdNum}</text>
-            <text x="${idW / 2}" y="346" font-size="9" font-family="MockupFont, sans-serif" fill="#64748b" text-anchor="middle">AUTHORIZED ACCESS ONLY</text>
+            ${idNumPath}
+            ${authTextPath}
             
             <!-- Barcode -->
             <rect x="40" y="365" width="240" height="32" rx="5" fill="#ffffff"/>
@@ -1120,7 +1123,7 @@ private loadKaryawanData() {
               <rect x="241" y="371" width="5" height="20"/><rect x="250" y="371" width="4" height="20"/><rect x="258" y="371" width="5" height="20"/>
             </g>
             <circle cx="260" y="310" r="16" fill="#fbbf24" fill-opacity="0.2" stroke="#fbbf24" stroke-width="1.5" stroke-dasharray="2,2"/>
-            <text x="260" y="314" font-size="8" font-family="MockupFontBold, sans-serif" font-weight="900" fill="#fbbf24" text-anchor="middle">VALID</text>
+            ${validBadgePath}
           </svg>
         `);
 
@@ -1167,16 +1170,16 @@ private loadKaryawanData() {
         let labelBadge = '';
         if (customText.trim()) {
           const cleanCustom = customText.trim().replace(/[<>&'"]/g, '').substring(0, 18);
+          const topiLabelPath = this.getTextSvgPath(cleanCustom, { x: patchW / 2, y: patchH - 26, fontSize: 15, bold: true, color: "#ffffff" });
           labelBadge = `
             <rect x="15" y="${patchH - 42}" width="${patchW - 30}" height="32" rx="16" fill="#000000" fill-opacity="0.8"/>
-            <text x="${patchW / 2}" y="${patchH - 20}" font-size="15" font-family="MockupFontBold, sans-serif" font-weight="900" fill="#ffffff" letter-spacing="1" text-anchor="middle">${cleanCustom}</text>
+            ${topiLabelPath}
           `;
         }
 
         const patchBorder = Buffer.from(`
           <svg width="${patchW}" height="${patchH}" xmlns="http://www.w3.org/2000/svg">
             <defs>
-              ${fontDefs}
               <linearGradient id="crownShine" x1="0%" y1="0%" x2="100%" y2="0%">
                 <stop offset="0%" stop-color="#000000" stop-opacity="0.30"/>
                 <stop offset="25%" stop-color="#ffffff" stop-opacity="0.12"/>
@@ -1254,9 +1257,10 @@ private loadKaryawanData() {
           const badgeH = 28;
           const badgeX = Math.round((fW - badgeW) / 2);
           const badgeY = pY + pH + 24;
+          const bingkaiLabelPath = this.getTextSvgPath(cleanText, { x: fW / 2, y: badgeY + 14, fontSize: 12, bold: true, color: "#ffffff" });
           badgeSvgChunk = `
             <rect x="${badgeX}" y="${badgeY}" width="${badgeW}" height="${badgeH}" rx="14" fill="#0f172a" fill-opacity="0.85" stroke="#d4af37" stroke-width="1.2"/>
-            <text x="${fW / 2}" y="${badgeY + 18}" font-size="12" font-family="MockupFontBold, sans-serif" font-weight="bold" fill="#ffffff" letter-spacing="1.5" text-anchor="middle">${cleanText}</text>
+            ${bingkaiLabelPath}
           `;
         }
 
@@ -1264,7 +1268,6 @@ private loadKaryawanData() {
         const matSvg = Buffer.from(`
           <svg width="${fW}" height="${fH}" xmlns="http://www.w3.org/2000/svg">
             <defs>
-              ${fontDefs}
               <linearGradient id="fullGlass" x1="0%" y1="0%" x2="100%" y2="100%">
                 <stop offset="0%" stop-color="#ffffff" stop-opacity="0.20"/>
                 <stop offset="35%" stop-color="#ffffff" stop-opacity="0.05"/>
@@ -1320,16 +1323,16 @@ private loadKaryawanData() {
         let brandTextOverlay = '';
         if (customText.trim()) {
           const cleanCustom = customText.trim().replace(/[<>&'"]/g, '').substring(0, 20);
+          const kaosLabelPath = this.getTextSvgPath(cleanCustom, { x: tW / 2, y: tH - 30, fontSize: 15, bold: true, color: "#ffffff" });
           brandTextOverlay = `
             <rect x="25" y="${tH - 48}" width="${tW - 50}" height="36" rx="8" fill="#0f172a" fill-opacity="0.9"/>
-            <text x="${tW / 2}" y="${tH - 25}" font-size="15" font-family="MockupFontBold, sans-serif" font-weight="900" fill="#ffffff" letter-spacing="2" text-anchor="middle">${cleanCustom}</text>
+            ${kaosLabelPath}
           `;
         }
 
         const shirtLighting = Buffer.from(`
           <svg width="${tW}" height="${tH}" xmlns="http://www.w3.org/2000/svg">
             <defs>
-              ${fontDefs}
               <linearGradient id="shirtShine" x1="0%" y1="0%" x2="100%" y2="0%">
                 <stop offset="0%" stop-color="#000000" stop-opacity="0.14"/>
                 <stop offset="35%" stop-color="#ffffff" stop-opacity="0.08"/>
@@ -1372,16 +1375,16 @@ private loadKaryawanData() {
         let pillowLabel = '';
         if (customText.trim()) {
           const cleanCustom = customText.trim().replace(/[<>&'"]/g, '').substring(0, 22);
+          const bantalLabelPath = this.getTextSvgPath(cleanCustom, { x: bW / 2, y: bH - 39, fontSize: 15, bold: true, color: "#ffffff" });
           pillowLabel = `
             <rect x="${bW / 2 - 130}" y="${bH - 58}" width="260" height="38" rx="19" fill="#000000" fill-opacity="0.75" stroke="#ffffff" stroke-width="1.5"/>
-            <text x="${bW / 2}" y="${bH - 33}" font-size="15" font-family="MockupFontBold, sans-serif" font-weight="bold" fill="#ffffff" text-anchor="middle">${cleanCustom}</text>
+            ${bantalLabelPath}
           `;
         }
 
         const pillowLighting = Buffer.from(`
           <svg width="${bW}" height="${bH}" xmlns="http://www.w3.org/2000/svg">
             <defs>
-              ${fontDefs}
               <radialGradient id="pillowRad" cx="48%" cy="48%" r="55%">
                 <stop offset="0%" stop-color="#ffffff" stop-opacity="0.14"/>
                 <stop offset="65%" stop-color="#000000" stop-opacity="0.06"/>
